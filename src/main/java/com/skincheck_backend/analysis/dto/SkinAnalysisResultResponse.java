@@ -13,4 +13,5 @@ public class SkinAnalysisResultResponse {
     private String skinType;
     private String summary;
     private List<ConditionView> conditions;
+    private List<RegionView> regions;
 }

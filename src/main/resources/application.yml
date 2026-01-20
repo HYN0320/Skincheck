@@ -2,6 +2,11 @@ spring:
   profiles:
     active: dev
 
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
 app:
   jwt:
     secret: "CHANGE_ME_TO_A_LONG_RANDOM_SECRET_CHANGE_ME_CHANGE_ME"
@@ -11,10 +16,12 @@ ai:
   provider: real
 
 ai-server:
-  base-url: http://localhost:8000
+  base-url: http://localhost:8010
+
 cloud:
   aws:
     credentials:
+
       access-key: ${AWS_ACCESS_KEY}
       secret-key: ${AWS_SECRET_KEY}
     region:

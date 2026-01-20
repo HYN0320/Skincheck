@@ -1,6 +1,5 @@
 package com.skincheck_backend.analysis.controller;
 
-
 import com.skincheck_backend.analysis.dto.SkinAnalysisResultResponse;
 import com.skincheck_backend.analysis.service.SkinAnalysisService;
 import com.skincheck_backend.common.response.ApiResponse;
@@ -22,22 +21,40 @@ public class SkinAnalysisController {
     private final S3UploadService s3UploadService;
 
     /**
-     * 📸 이미지 업로드 → 분석
+     * 📸 이미지 업로드 → 분석 (로그인 필수)
      */
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<SkinAnalysisResultResponse> analyze(
             Authentication authentication,
             @RequestPart("image") MultipartFile image
     ) {
-        String email = (authentication != null)
-                ? authentication.getName()
-                : null; // 익명 분석
+        System.out.println("🔥 [Controller] 분석 요청 들어옴");
 
+        if (authentication == null) {
+            throw new IllegalStateException("로그인이 필요합니다.");
+        }
+
+        System.out.println("🔥 [Controller] image null? " + (image == null));
+        System.out.println("🔥 [Controller] image empty? " + image.isEmpty());
+        System.out.println("🔥 [Controller] image size = " + image.getSize());
+        System.out.println("🔥 [Controller] image contentType = " + image.getContentType());
+        System.out.println("🔥 [Controller] image name = " + image.getOriginalFilename());
+
+        String email = authentication.getName();
+        System.out.println("🔥 [Controller] user email = " + email);
+
+        // 🔴 여기서 멈추는지 확인
+        System.out.println("🔥 [Controller] S3 업로드 시작");
         String imageUrl = s3UploadService.upload(image);
+        System.out.println("🔥 [Controller] S3 업로드 완료: " + imageUrl);
 
-        return ApiResponse.ok(
-                skinAnalysisService.analyzeAndSave(email, imageUrl)
-        );
+        // 🔴 여기서 멈추는지 확인
+        System.out.println("🔥 [Controller] AI 분석 시작");
+        SkinAnalysisResultResponse result =
+                skinAnalysisService.analyzeAndSave(email, imageUrl);
+        System.out.println("🔥 [Controller] AI 분석 완료");
+
+        return ApiResponse.ok(result);
     }
 
     /**

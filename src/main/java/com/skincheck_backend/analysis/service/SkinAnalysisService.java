@@ -1,8 +1,7 @@
 package com.skincheck_backend.analysis.service;
 
-import com.skincheck_backend.analysis.dto.AiAnalysisResponse;
-import com.skincheck_backend.analysis.dto.ConditionView;
-import com.skincheck_backend.analysis.dto.SkinAnalysisResultResponse;
+import com.skincheck_backend.User.service.UserService;
+import com.skincheck_backend.analysis.dto.*;
 import com.skincheck_backend.analysis.entity.SkinAnalysis;
 import com.skincheck_backend.analysis.entity.SkinAnalysisCondition;
 import com.skincheck_backend.analysis.provider.AiResultProvider;
@@ -31,6 +30,9 @@ public class SkinAnalysisService {
     private final ConditionLevelCalculator levelCalculator;
     private final SummaryGenerator summaryGenerator;
 
+    // ⭐ 부위별 매퍼
+    private final RegionMetricMapper regionMetricMapper;
+
     /**
      * ✅ 이미지 URL 기반 분석 (Mock / Real 공용)
      */
@@ -39,13 +41,12 @@ public class SkinAnalysisService {
             String email,
             String imageUrl
     ) {
-        // 1️⃣ 사용자 조회
+        // ✅ 무조건 로그인 사용자
         User user = userService.getByEmailOrThrow(email);
 
-        // 2️⃣ AI 분석
         AiAnalysisResponse ai = aiResultProvider.analyze(imageUrl);
+        AiAnalysisRawResult raw = aiResultProvider.analyzeRaw(imageUrl);
 
-        // 3️⃣ Condition Level 계산
         Map<ConditionType, ConditionLevel> levelMap = new HashMap<>();
         for (AiAnalysisResponse.ConditionResult cr : ai.getConditions()) {
             ConditionLevel level =
@@ -53,38 +54,31 @@ public class SkinAnalysisService {
             levelMap.put(cr.getConditionType(), level);
         }
 
-        // 4️⃣ Summary 생성
         String summary = summaryGenerator.summary(
                 ai.getSkinTypeCode(),
                 levelMap
         );
 
-        // 5️⃣ SkinAnalysis 저장
         SkinAnalysis analysis = new SkinAnalysis(
-                user,
+                user,                      // ✅ 절대 null 아님
                 ai.getSkinTypeCode(),
                 summary,
                 null,
                 imageUrl
         );
+
         SkinAnalysis saved = skinAnalysisRepository.save(analysis);
 
-        // 6️⃣ Condition 저장 + View 생성
         List<ConditionView> views = new ArrayList<>();
-
         for (AiAnalysisResponse.ConditionResult cr : ai.getConditions()) {
             ConditionLevel level = levelMap.get(cr.getConditionType());
-            String desc = summaryGenerator.description(
-                    cr.getConditionType(),
-                    level
-            );
 
             SkinAnalysisCondition cond = new SkinAnalysisCondition(
                     saved,
                     cr.getConditionType(),
                     cr.getValue(),
                     level,
-                    desc
+                    summaryGenerator.description(cr.getConditionType(), level)
             );
             conditionRepository.save(cond);
 
@@ -94,25 +88,30 @@ public class SkinAnalysisService {
                             .name(summaryGenerator.conditionNameToKorean(cr.getConditionType()))
                             .level(summaryGenerator.levelToKorean(level))
                             .value(cr.getValue())
-                            .description(desc)
+                            .description(cond.getDescription())
                             .build()
             );
         }
 
-        // 7️⃣ 응답
+        List<RegionView> regions =
+                regionMetricMapper.map(raw.getMetrics());
+
         return SkinAnalysisResultResponse.builder()
                 .analysisId(saved.getId())
                 .skinType(summaryGenerator.skinTypeToKorean(ai.getSkinTypeCode()))
                 .summary(summary)
                 .conditions(views)
+                .regions(regions)
                 .build();
     }
+
 
     /**
      * ✅ 내 분석 히스토리 조회
      */
     @Transactional(readOnly = true)
     public List<SkinAnalysisResultResponse> getMyHistory(String email) {
+
         User user = userService.getByEmailOrThrow(email);
         List<SkinAnalysis> list =
                 skinAnalysisRepository.findByUserOrderByCreatedAtDesc(user);
@@ -120,6 +119,7 @@ public class SkinAnalysisService {
         List<SkinAnalysisResultResponse> res = new ArrayList<>();
 
         for (SkinAnalysis a : list) {
+
             List<SkinAnalysisCondition> conds =
                     conditionRepository.findByAnalysisId(a.getId());
 
@@ -142,6 +142,7 @@ public class SkinAnalysisService {
                             .skinType(summaryGenerator.skinTypeToKorean(a.getSkinTypeCode()))
                             .summary(a.getSummaryText())
                             .conditions(views)
+                            .regions(null) // 히스토리는 부위별 제외
                             .build()
             );
         }
