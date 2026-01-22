@@ -28,19 +28,39 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             FilterChain filterChain
     ) throws ServletException, IOException {
 
+        // 🔍 디버그 로그
+        System.out.println("🧪 URI = " + request.getRequestURI());
+        System.out.println("🧪 METHOD = " + request.getMethod());
+        System.out.println("🧪 AUTH = " + request.getHeader("Authorization"));
+
         String auth = request.getHeader("Authorization");
+
         if (auth != null && auth.startsWith("Bearer ")) {
             String token = auth.substring(7);
+
+            // 🔥 토큰 검증
             if (jwtTokenProvider.validate(token)) {
                 String email = jwtTokenProvider.getEmail(token);
-                UserDetails ud = userDetailsService.loadUserByUsername(email);
+                UserDetails userDetails =
+                        userDetailsService.loadUserByUsername(email);
 
                 UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(ud, null, ud.getAuthorities());
-                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(authentication);
+                        new UsernamePasswordAuthenticationToken(
+                                userDetails,
+                                null,
+                                userDetails.getAuthorities()
+                        );
+
+                authentication.setDetails(
+                        new WebAuthenticationDetailsSource()
+                                .buildDetails(request)
+                );
+
+                SecurityContextHolder.getContext()
+                        .setAuthentication(authentication);
             }
         }
+
         filterChain.doFilter(request, response);
     }
 }

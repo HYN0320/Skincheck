@@ -28,3 +28,11 @@ cloud:
       static: ap-southeast-2
     s3:
       bucket: skincheck-images
+
+deepseek:
+  api-key: "sk-25e6993e099545988b7e1c4711077339"
+  model: deepseek-chat
+
+naver:
+  client-id: w_1Px893pTuZr1QF8pFK
+  client-secret: 9XIRbPcc1c

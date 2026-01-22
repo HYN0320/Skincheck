@@ -8,91 +8,81 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
-
 @Component
 @RequiredArgsConstructor
 public class RegionMetricMapper {
 
     private final ConditionLevelCalculator levelCalculator;
 
-    /**
-     * AI raw metric Map → RegionView 리스트 변환
-     */
+    private static final int DEFAULT_VALUE = 50;
+
     public List<RegionView> map(Map<String, Integer> metrics) {
 
-        /**
-         * bucket 구조
-         *
-         * region (leftCheek)
-         *   └─ ConditionType (ELASTICITY)
-         *        └─ [29, 37, 34, 32]
-         */
         Map<String, Map<ConditionType, List<Integer>>> bucket = new HashMap<>();
 
         // 1️⃣ raw metric 분류
         metrics.forEach((key, value) -> {
 
-            // 예: ELASTICITY_LEFTCHEEK_Q0
             String[] parts = key.split("_");
             if (parts.length < 2) return;
 
-            String typeStr = parts[0];
-            String regionRaw = parts[1];
-
-            ConditionType conditionType;
+            ConditionType type;
             try {
-                conditionType = ConditionType.valueOf(typeStr);
-            } catch (IllegalArgumentException e) {
-                // enum에 없는 타입은 무시
+                type = ConditionType.valueOf(parts[0]);
+            } catch (Exception e) {
                 return;
             }
 
-            String region = normalize(regionRaw);
-
-            // chin 제거 / 알 수 없는 region 방어
+            String region = normalize(parts[1]);
             if (!isSupportedRegion(region)) return;
 
             bucket
                     .computeIfAbsent(region, r -> new HashMap<>())
-                    .computeIfAbsent(conditionType, t -> new ArrayList<>())
+                    .computeIfAbsent(type, t -> new ArrayList<>())
                     .add(value);
         });
 
-        // 2️⃣ bucket → RegionView 변환
+        // 2️⃣ 모든 region 강제 생성
+        List<String> allRegions = List.of(
+                "forehead",
+                "leftEye",
+                "rightEye",
+                "leftCheek",
+                "rightCheek",
+                "lip"
+        );
+
         List<RegionView> regions = new ArrayList<>();
 
-        for (var regionEntry : bucket.entrySet()) {
+        for (String region : allRegions) {
 
-            String region = regionEntry.getKey();
+            Map<ConditionType, List<Integer>> condMap =
+                    bucket.getOrDefault(region, Map.of());
+
             List<RegionConditionView> conditionViews = new ArrayList<>();
 
-            for (var condEntry : regionEntry.getValue().entrySet()) {
+            for (ConditionType type : ConditionType.values()) {
 
-                ConditionType type = condEntry.getKey();
-                List<Integer> values = condEntry.getValue();
+                List<Integer> values = condMap.get(type);
 
-                // ⭐ 대표값 계산 (평균)
-                int avgValue = (int) values.stream()
-                        .mapToInt(v -> v)
-                        .average()
-                        .orElse(0);
+                int value = (values == null || values.isEmpty())
+                        ? DEFAULT_VALUE
+                        : (int) values.stream().mapToInt(v -> v).average().orElse(DEFAULT_VALUE);
 
-                // ⭐ level 계산
-                ConditionLevel level =
-                        levelCalculator.calc(type, avgValue);
+                ConditionLevel level = levelCalculator.calc(type, value);
 
                 conditionViews.add(
                         RegionConditionView.builder()
-                                .type(type.name())       // MOISTURE / ELASTICITY ...
-                                .value(avgValue)
-                                .level(level.name())     // GOOD / NORMAL / LOW / BAD
+                                .type(type.name())
+                                .value(value)
+                                .level(level.name())
                                 .build()
                 );
             }
 
             regions.add(
                     RegionView.builder()
-                            .region(region)              // forehead / leftEye / ...
+                            .region(region)
                             .conditions(conditionViews)
                             .build()
             );
@@ -101,28 +91,18 @@ public class RegionMetricMapper {
         return regions;
     }
 
-    /**
-     * AI raw region → 프론트 기준 region 매핑
-     */
     private String normalize(String raw) {
         return switch (raw) {
             case "FOREHEAD" -> "forehead";
             case "LEFTCHEEK" -> "leftCheek";
             case "RIGHTCHEEK" -> "rightCheek";
-
             case "LEFTEYE" -> "leftEye";
             case "RIGHTEYE" -> "rightEye";
-
-            case "LIP", "MOUTH" -> "lip";
-
-            // chin 제거 (더 이상 사용 안 함)
+            case "LIP", "MOUTH", "CHIN" -> "lip"; // 🔥 핵심
             default -> raw.toLowerCase();
         };
     }
 
-    /**
-     * 프론트에서 사용하는 region만 허용
-     */
     private boolean isSupportedRegion(String region) {
         return Set.of(
                 "forehead",

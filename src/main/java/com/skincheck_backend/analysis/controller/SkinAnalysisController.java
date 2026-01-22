@@ -1,5 +1,7 @@
 package com.skincheck_backend.analysis.controller;
 
+import com.skincheck_backend.analysis.dto.AnalysisHistoryItemResponse;
+import com.skincheck_backend.analysis.dto.AnalysisInsightResponse;
 import com.skincheck_backend.analysis.dto.SkinAnalysisResultResponse;
 import com.skincheck_backend.analysis.service.SkinAnalysisService;
 import com.skincheck_backend.common.response.ApiResponse;
@@ -61,12 +63,36 @@ public class SkinAnalysisController {
      * 내 분석 히스토리
      */
     @GetMapping("/history")
-    public ApiResponse<List<SkinAnalysisResultResponse>> myHistory(
+    public ApiResponse<List<AnalysisHistoryItemResponse>> myHistory(
             Authentication authentication
     ) {
-        String email = authentication.getName();
         return ApiResponse.ok(
-                skinAnalysisService.getMyHistory(email)
+                skinAnalysisService.getMyHistory(authentication.getName())
         );
     }
+    @GetMapping("/{analysisId}")
+    public ApiResponse<SkinAnalysisResultResponse> getDetail(
+            @PathVariable Long analysisId,
+            Authentication authentication
+    ) {
+        return ApiResponse.ok(
+                skinAnalysisService.getAnalysisDetail(
+                        analysisId,
+                        authentication.getName()
+                )
+        );
+    }
+    @GetMapping("/{analysisId}/insight")
+    public ApiResponse<AnalysisInsightResponse> getInsight(
+            @PathVariable Long analysisId,
+            Authentication authentication
+    ) {
+        return ApiResponse.ok(
+                skinAnalysisService.getInsight(
+                        analysisId,
+                        authentication.getName()
+                )
+        );
+    }
+
 }
