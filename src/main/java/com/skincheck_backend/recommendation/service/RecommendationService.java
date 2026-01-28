@@ -43,7 +43,7 @@ public class RecommendationService {
         List<CosmeticDto> merged =
                 Stream.concat(dbCosmetics.stream(), realtimeCosmetics.stream())
                         .distinct()
-                        .limit(5)
+                        .limit(10)
                         .toList();
 
         return new HomeRecommendationSection(type, score, merged);

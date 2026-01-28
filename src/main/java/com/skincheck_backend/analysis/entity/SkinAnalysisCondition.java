@@ -12,11 +12,12 @@ import lombok.NoArgsConstructor;
 @Table(name = "skin_analysis_condition")
 public class SkinAnalysisCondition {
 
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name="analysis_id", nullable = false)
+    @JoinColumn(name = "analysis_id", nullable = false)
     private SkinAnalysis analysis;
 
     @Enumerated(EnumType.STRING)
@@ -33,11 +34,22 @@ public class SkinAnalysisCondition {
     @Column(length = 255)
     private String description;
 
-    public SkinAnalysisCondition(SkinAnalysis analysis, ConditionType type, int value, ConditionLevel level, String description) {
+    public SkinAnalysisCondition(
+            SkinAnalysis analysis,
+            ConditionType type,
+            int value,
+            ConditionLevel level,
+            String description
+    ) {
         this.analysis = analysis;
         this.conditionType = type;
         this.conditionValue = value;
         this.conditionLevel = level;
+        this.description = description;
+    }
+
+    // ✅ 추가 (핵심)
+    public void updateDescription(String description) {
         this.description = description;
     }
 }

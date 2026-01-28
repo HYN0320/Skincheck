@@ -46,4 +46,9 @@ public class SkinAnalysis {
         this.summaryText = summaryText;
         this.imageUrl = imageUrl;
     }
+
+    // ✅ 추가 (핵심)
+    public void updateSummary(String summaryText) {
+        this.summaryText = summaryText;
+    }
 }

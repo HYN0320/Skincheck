@@ -7,6 +7,19 @@ spring:
       max-file-size: 10MB
       max-request-size: 10MB
 
+  # 🔥 이메일 인증용 메일 설정 추가
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: hyn960320@gmail.com
+    password: jkqg xyub aepx nzxy
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
 app:
   jwt:
     secret: "CHANGE_ME_TO_A_LONG_RANDOM_SECRET_CHANGE_ME_CHANGE_ME"
@@ -21,7 +34,6 @@ ai-server:
 cloud:
   aws:
     credentials:
-
       access-key: ${AWS_ACCESS_KEY}
       secret-key: ${AWS_SECRET_KEY}
     region:

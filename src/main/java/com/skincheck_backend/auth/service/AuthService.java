@@ -30,8 +30,11 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final JwtTokenProvider jwtTokenProvider;
 
+    // 🔥 이메일 인증 서비스 추가
+    private final EmailVerificationService emailVerificationService;
+
     /**
-     * ✅ 회원가입 (기본 정보 + 추가 정보 저장)
+     * ✅ 회원가입 (기본 정보 + 추가 정보 + 이메일 인증 토큰 생성)
      */
     @Transactional
     public void signup(SignupRequest req) {
@@ -53,6 +56,9 @@ public class AuthService {
         );
         userRepository.save(user);
 
+        // 🔥 2-1️⃣ 이메일 인증 토큰 생성 (핵심)
+        emailVerificationService.create(user);
+
         // 3️⃣ UserProfile 저장 (추가 정보)
         UserProfile profile = new UserProfile(
                 user,
@@ -71,7 +77,7 @@ public class AuthService {
     }
 
     /**
-     * ✅ 로그인
+     * ✅ 로그인 (기존 그대로 유지)
      */
     public String login(String email, String password) {
         try {

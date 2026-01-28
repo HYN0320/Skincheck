@@ -10,6 +10,8 @@ import com.skincheck_backend.analysis.repository.SkinAnalysisConditionRepository
 import com.skincheck_backend.analysis.repository.SkinAnalysisRepository;
 import com.skincheck_backend.common.enumtype.ConditionLevel;
 import com.skincheck_backend.common.enumtype.ConditionType;
+import com.skincheck_backend.recommendation.dto.CosmeticDto;
+import com.skincheck_backend.recommendation.service.RecommendationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,7 +32,7 @@ public class SkinAnalysisService {
     private final RegionMetricMapper regionMetricMapper;
     private final DeepSeekInsightClient deepSeekInsightClient;
     private final InsightPromptBuilder insightPromptBuilder;
-
+    private final RecommendationService recommendationService;
     /**
      * ✅ 이미지 업로드 후 분석 + 저장
      */
@@ -42,69 +44,82 @@ public class SkinAnalysisService {
         AiAnalysisResponse ai = aiResultProvider.analyze(imageUrl);
         AiAnalysisRawResult raw = aiResultProvider.analyzeRaw(imageUrl);
 
-        // ✅ 1️⃣ conditions null 방어 (가장 중요)
-        List<AiAnalysisResponse.ConditionResult> conditions =
+        // 1️⃣ conditions null 방어
+        List<AiAnalysisResponse.ConditionResult> results =
                 Optional.ofNullable(ai.getConditions()).orElse(List.of());
 
-        if (conditions.isEmpty()) {
+        if (results.isEmpty()) {
             throw new IllegalStateException("AI 분석 결과 conditions가 비어있습니다.");
         }
 
-        Map<ConditionType, ConditionLevel> levelMap = new HashMap<>();
-        for (AiAnalysisResponse.ConditionResult cr : conditions) {
-            levelMap.put(
-                    cr.getConditionType(),
-                    levelCalculator.calc(cr.getConditionType(), cr.getValue())
-            );
-        }
-
-        String summary = summaryGenerator.summary(
-                ai.getSkinTypeCode(),
-                levelMap
-        );
-
+        // 2️⃣ SkinAnalysis 먼저 저장 (summary는 임시)
         SkinAnalysis analysis = new SkinAnalysis(
                 user,
                 ai.getSkinTypeCode(),
-                summary,
+                "", // summary는 나중에
                 imageUrl
         );
+        SkinAnalysis savedAnalysis = skinAnalysisRepository.save(analysis);
 
-        SkinAnalysis saved = skinAnalysisRepository.save(analysis);
-
+        // 3️⃣ Condition 저장
+        List<SkinAnalysisCondition> savedConditions = new ArrayList<>();
         List<ConditionView> conditionViews = new ArrayList<>();
-        for (AiAnalysisResponse.ConditionResult cr : conditions) {
 
-            ConditionLevel level = levelMap.get(cr.getConditionType());
+        for (AiAnalysisResponse.ConditionResult cr : results) {
 
-            SkinAnalysisCondition cond = new SkinAnalysisCondition(
-                    saved,
+            ConditionLevel level =
+                    levelCalculator.calc(cr.getConditionType(), cr.getValue());
+
+            SkinAnalysisCondition condition = new SkinAnalysisCondition(
+                    savedAnalysis,
                     cr.getConditionType(),
                     cr.getValue(),
                     level,
-                    summaryGenerator.description(cr.getConditionType(), level)
+                    null // description 나중에
             );
-            conditionRepository.save(cond);
+
+            SkinAnalysisCondition savedCondition =
+                    conditionRepository.save(condition);
+
+            savedConditions.add(savedCondition);
+        }
+
+        // 4️⃣ 🔥 summary 생성 (핵심 변경)
+        String summary = summaryGenerator.generate(savedConditions);
+
+        // 5️⃣ summary 업데이트
+        savedAnalysis.updateSummary(summary);
+
+        // 6️⃣ description + ConditionView 구성
+        for (SkinAnalysisCondition cond : savedConditions) {
+
+            String description =
+                    summaryGenerator.description(
+                            cond.getConditionType(),
+                            cond.getConditionLevel()
+                    );
+
+            cond.updateDescription(description);
 
             conditionViews.add(
                     ConditionView.builder()
-                            .type(cr.getConditionType().name())
-                            .name(summaryGenerator.conditionNameToKorean(cr.getConditionType()))
-                            .level(summaryGenerator.levelToKorean(level))
-                            .value(cr.getValue())
-                            .description(cond.getDescription())
+                            .type(cond.getConditionType().name())
+                            .name(summaryGenerator.conditionNameToKorean(cond.getConditionType()))
+                            .level(summaryGenerator.levelToKorean(cond.getConditionLevel()))
+                            .value(cond.getConditionValue())
+                            .description(description)
                             .build()
             );
         }
 
-        // ✅ 2️⃣ raw / metrics null 방어
+        // 7️⃣ region metrics
         List<RegionView> regions =
                 (raw == null || raw.getMetrics() == null)
                         ? List.of()
                         : regionMetricMapper.map(raw.getMetrics());
 
         return SkinAnalysisResultResponse.builder()
-                .analysisId(saved.getId())
+                .analysisId(savedAnalysis.getId())
                 .skinType(summaryGenerator.skinTypeToKorean(ai.getSkinTypeCode()))
                 .summary(summary)
                 .conditions(conditionViews)
@@ -163,12 +178,15 @@ public class SkinAnalysisService {
                 .skinType(summaryGenerator.skinTypeToKorean(analysis.getSkinTypeCode()))
                 .summary(analysis.getSummaryText())
                 .conditions(views)
-                .regions(List.of()) // ✅ null 절대 금지
+                .regions(List.of())
                 .build();
     }
 
     /**
      * ✅ AI 인사이트 조회
+     */
+    /**
+     * ✅ AI 인사이트 조회 + 화장품 추천
      */
     @Transactional(readOnly = true)
     public AnalysisInsightResponse getInsight(Long analysisId, String email) {
@@ -183,6 +201,7 @@ public class SkinAnalysisService {
         List<SkinAnalysisCondition> conds =
                 conditionRepository.findByAnalysisId(analysisId);
 
+        // 1️⃣ AI 인사이트 생성
         String prompt = insightPromptBuilder.build(analysis, conds);
         String insight = deepSeekInsightClient.generateInsight(prompt);
 
@@ -190,6 +209,24 @@ public class SkinAnalysisService {
             insight = analysis.getSummaryText();
         }
 
+        // 2️⃣ 가장 안 좋은 Condition 하나 선택
+        SkinAnalysisCondition worstCondition =
+                conds.stream()
+                        .min(Comparator.comparingInt(SkinAnalysisCondition::getConditionValue))
+                        .orElse(null);
+
+        // 3️⃣ 화장품 추천 (이미지 포함)
+        List<CosmeticDto> recommendedProducts =
+                (worstCondition == null)
+                        ? List.of()
+                        : recommendationService
+                        .recommend(
+                                worstCondition.getConditionType(),
+                                worstCondition.getConditionValue()
+                        )
+                        .getProducts();
+
+        // 4️⃣ 최종 응답
         return new AnalysisInsightResponse(
                 analysis.getCreatedAt().toLocalDate().toString(),
                 summaryGenerator.skinTypeToKorean(analysis.getSkinTypeCode()),
@@ -201,7 +238,9 @@ public class SkinAnalysisService {
                                 c.getConditionLevel().name()
                         ))
                         .toList(),
-                insight
+                insight,
+                recommendedProducts // 🔥 추가된 부분
         );
     }
+
 }
